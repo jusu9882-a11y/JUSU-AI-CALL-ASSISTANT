@@ -39,5 +39,5 @@ class CallDecisionEngine {
         CallerScope.ALL -> 1
     }
 
-    private fun normalize(number: String?): String? = number?.filter { it.isDigit() }.takeIf { it.isNotEmpty() }
+    private fun normalize(number: String?): String? = number?.filter { it.isDigit() }?.takeIf { it.isNotEmpty() }
 }
