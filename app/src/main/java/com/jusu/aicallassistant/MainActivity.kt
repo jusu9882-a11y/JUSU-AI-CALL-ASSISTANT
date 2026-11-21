@@ -3,72 +3,80 @@ package com.jusu.aicallassistant
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.height
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.jusu.aicallassistant.data.InstructionRepository
+import com.jusu.aicallassistant.engine.CallAction
+import com.jusu.aicallassistant.engine.CallInstruction
+import com.jusu.aicallassistant.engine.CallerScope
+import kotlinx.coroutines.launch
+import java.util.UUID
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val prefs = getSharedPreferences("jusu_assistant_settings", MODE_PRIVATE)
+        val repository = InstructionRepository(applicationContext)
         setContent {
-            var enabled by mutableStateOf(prefs.getBoolean("assistant_enabled", false))
-            var selectedMode by mutableStateOf(prefs.getString("ai_mode", "Lightweight Offline") ?: "Lightweight Offline")
-            JusuHome(
-                enabled = enabled,
-                onEnabledChange = { value ->
-                    enabled = value
-                    prefs.edit().putBoolean("assistant_enabled", value).apply()
-                },
-                mode = selectedMode,
-                onModeChange = { value ->
-                    selectedMode = value
-                    prefs.edit().putString("ai_mode", value).apply()
-                }
-            )
+            var enabled by remember { mutableStateOf(prefs.getBoolean("assistant_enabled", false)) }
+            var selectedMode by remember { mutableStateOf(prefs.getString("ai_mode", "Lightweight Offline") ?: "Lightweight Offline") }
+            JusuHome(enabled, { value ->
+                enabled = value
+                prefs.edit().putBoolean("assistant_enabled", value).apply()
+            }, selectedMode, { value ->
+                selectedMode = value
+                prefs.edit().putString("ai_mode", value).apply()
+            }, repository)
         }
     }
 }
 
-
 @Composable
-private fun JusuHome(enabled: Boolean, onEnabledChange: (Boolean) -> Unit, mode: String, onModeChange: (String) -> Unit) {
+private fun JusuHome(
+    enabled: Boolean,
+    onEnabledChange: (Boolean) -> Unit,
+    mode: String,
+    onModeChange: (String) -> Unit,
+    repository: InstructionRepository
+) {
+    val scope = rememberCoroutineScope()
+    var instructions by remember { mutableStateOf(emptyList<CallInstruction>()) }
+    var activeProfile by remember { mutableStateOf(repository.activeProfile()) }
+    var editing by remember { mutableStateOf<CallInstruction?>(null) }
+    var showEditor by remember { mutableStateOf(false) }
+
+    LaunchedEffect(repository) {
+        repository.instructions.collect { instructions = it }
+    }
+
     MaterialTheme {
-        Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            Column(modifier = Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+            Column(
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
                 Text("JUSU", style = MaterialTheme.typography.headlineLarge, color = MaterialTheme.colorScheme.primary)
                 Text("AI CALL ASSISTANT", style = MaterialTheme.typography.titleMedium)
                 Text("Powered by JUSU", style = MaterialTheme.typography.labelMedium)
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Row(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+
+                Card(Modifier.fillMaxWidth()) {
+                    Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                         Column {
                             Text("Assistant", style = MaterialTheme.typography.titleLarge)
-                            Text(if (enabled) "Enabled (settings only)" else "Off")
+                            Text(if (enabled) "Enabled in app settings" else "Off")
                         }
                         Switch(checked = enabled, onCheckedChange = onEnabledChange)
                     }
                 }
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("AI operating mode", style = MaterialTheme.typography.titleMedium)
                         Text("Selected: $mode")
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -78,15 +86,142 @@ private fun JusuHome(enabled: Boolean, onEnabledChange: (Boolean) -> Unit, mode:
                         if (mode == "Advanced Offline AI") Text("Local model integration is not installed yet. Lightweight mode remains available.", style = MaterialTheme.typography.bodySmall)
                     }
                 }
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Device capability status", style = MaterialTheme.typography.titleMedium)
-                        Text("Call screening and phone-call audio features are not connected in this milestone.")
+
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("Instruction control center", style = MaterialTheme.typography.titleLarge)
+                        Text("Rules are saved locally on this device and evaluated by the offline decision engine.")
+                        Text("Active profile: $activeProfile", style = MaterialTheme.typography.titleMedium)
+                        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                            listOf("Personal", "Professional", "Privacy", "Busy", "Custom").forEach { profile ->
+                                TextButton(onClick = {
+                                    activeProfile = profile
+                                    repository.setActiveProfile(profile)
+                                }) { Text(if (activeProfile == profile) "[$profile]" else profile) }
+                            }
+                        }
+                        Button(onClick = { editing = null; showEditor = true }, modifier = Modifier.fillMaxWidth()) {
+                            Text("+ Add instruction")
+                        }
+                        val visibleRules = instructions.filter { it.profile == activeProfile }
+                        if (visibleRules.isEmpty()) {
+                            Text("No instructions in this profile yet. Add a rule to define how matching callers should be handled.")
+                        } else {
+                            visibleRules.forEach { rule ->
+                                InstructionRow(
+                                    rule,
+                                    { checked -> scope.launch { repository.save(rule.copy(enabled = checked)) } },
+                                    { editing = rule; showEditor = true },
+                                    { scope.launch { repository.delete(rule.id) } }
+                                )
+                            }
+                        }
+                        Text("${visibleRules.size} instruction(s) · ${visibleRules.count { it.enabled }} active", style = MaterialTheme.typography.bodySmall)
                     }
                 }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("Privacy first · Settings stored locally on this device", style = MaterialTheme.typography.bodySmall)
+
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Device capability status", style = MaterialTheme.typography.titleMedium)
+                        Text("The offline rule engine is implemented. Android call screening, answering, and phone-call audio are not connected yet.")
+                    }
+                }
+                Text("Privacy first · Instructions and settings stay on this device", style = MaterialTheme.typography.bodySmall)
             }
         }
     }
+
+    if (showEditor) {
+        InstructionEditor(editing, activeProfile, { showEditor = false }, { rule ->
+            scope.launch { repository.save(rule) }
+            showEditor = false
+        })
+    }
+}
+
+@Composable
+private fun InstructionRow(
+    rule: CallInstruction,
+    onToggle: (Boolean) -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                Column(Modifier.weight(1f)) {
+                    Text(rule.title, style = MaterialTheme.typography.titleMedium)
+                    Text("${rule.action} · ${rule.scope} · Priority ${rule.priority}", style = MaterialTheme.typography.bodySmall)
+                    if (rule.scope == CallerScope.PHONE_NUMBER) Text(rule.phoneNumber.orEmpty(), style = MaterialTheme.typography.bodySmall)
+                }
+                Switch(checked = rule.enabled, onCheckedChange = onToggle)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = onEdit) { Text("Edit") }
+                TextButton(onClick = onDelete) { Text("Delete") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun InstructionEditor(
+    initial: CallInstruction?,
+    profile: String,
+    onDismiss: () -> Unit,
+    onSave: (CallInstruction) -> Unit
+) {
+    var title by remember(initial) { mutableStateOf(initial?.title.orEmpty()) }
+    var scopeChoice by remember(initial) { mutableStateOf(initial?.scope ?: CallerScope.ALL) }
+    var actionChoice by remember(initial) { mutableStateOf(initial?.action ?: CallAction.ALLOW) }
+    var phone by remember(initial) { mutableStateOf(initial?.phoneNumber.orEmpty()) }
+    var priority by remember(initial) { mutableStateOf(initial?.priority?.toString() ?: "0") }
+    var active by remember(initial) { mutableStateOf(initial?.enabled ?: true) }
+    val scopes = CallerScope.values().toList()
+    val actions = CallAction.values().toList()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (initial == null) "New instruction" else "Edit instruction") },
+        text = {
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Instruction name") }, singleLine = true)
+                Text("Caller scope: $scopeChoice")
+                TextButton(onClick = { scopeChoice = scopes[(scopes.indexOf(scopeChoice) + 1) % scopes.size] }) {
+                    Text("Change caller scope")
+                }
+                if (scopeChoice == CallerScope.PHONE_NUMBER) {
+                    OutlinedTextField(value = phone, onValueChange = { phone = it }, label = { Text("Phone number") }, singleLine = true)
+                }
+                Text("Action: $actionChoice")
+                TextButton(onClick = { actionChoice = actions[(actions.indexOf(actionChoice) + 1) % actions.size] }) {
+                    Text("Change action")
+                }
+                OutlinedTextField(value = priority, onValueChange = { priority = it.filter { c -> c.isDigit() || c == '-' }.take(6) }, label = { Text("Priority (higher wins)") }, singleLine = true)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Instruction active")
+                    Switch(checked = active, onCheckedChange = { active = it })
+                }
+                Text("Profile: $profile", style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = title.isNotBlank() && (scopeChoice != CallerScope.PHONE_NUMBER || phone.isNotBlank()),
+                onClick = {
+                    onSave(CallInstruction(
+                        id = initial?.id ?: UUID.randomUUID().toString(),
+                        title = title.trim(),
+                        scope = scopeChoice,
+                        action = actionChoice,
+                        phoneNumber = if (scopeChoice == CallerScope.PHONE_NUMBER) phone.trim() else null,
+                        enabled = active,
+                        priority = priority.toIntOrNull() ?: 0,
+                        profile = profile
+                    ))
+                }
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
