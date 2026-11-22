@@ -50,10 +50,7 @@ fun JusuChatScreen(onClose: () -> Unit) {
             }
             TextButton(onClick = onClose) { Text("Close") }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-            AssistChip(onClick = {}, label = { Text("Offline") })
-            AssistChip(onClick = {}, label = { Text("Local rules") })
-        }
+        Text("OFFLINE · LOCAL RULES", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
 
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = listState, verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(vertical = 8.dp)) {
             if (turns.isEmpty()) {
