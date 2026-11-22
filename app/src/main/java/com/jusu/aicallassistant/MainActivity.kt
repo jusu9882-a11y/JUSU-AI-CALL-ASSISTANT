@@ -1,8 +1,14 @@
 package com.jusu.aicallassistant
 
+import android.Manifest
+import android.app.role.RoleManager
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -19,20 +25,66 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 
 class MainActivity : ComponentActivity() {
+    private var screeningRoleHeld by mutableStateOf(false)
+    private var contactsPermissionGranted by mutableStateOf(false)
+    private var roleLauncher: androidx.activity.result.ActivityResultLauncher<Intent>? = null
+    private var contactsLauncher: androidx.activity.result.ActivityResultLauncher<String>? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        roleLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+            refreshPermissionState()
+        }
+        contactsLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+            refreshPermissionState()
+        }
+        refreshPermissionState()
+
         val prefs = getSharedPreferences("jusu_assistant_settings", MODE_PRIVATE)
         val repository = InstructionRepository(applicationContext)
         setContent {
             var enabled by remember { mutableStateOf(prefs.getBoolean("assistant_enabled", false)) }
             var selectedMode by remember { mutableStateOf(prefs.getString("ai_mode", "Lightweight Offline") ?: "Lightweight Offline") }
-            JusuHome(enabled, { value ->
-                enabled = value
-                prefs.edit().putBoolean("assistant_enabled", value).apply()
-            }, selectedMode, { value ->
-                selectedMode = value
-                prefs.edit().putString("ai_mode", value).apply()
-            }, repository)
+            JusuHome(
+                enabled = enabled,
+                onEnabledChange = { value ->
+                    enabled = value
+                    prefs.edit().putBoolean("assistant_enabled", value).apply()
+                },
+                mode = selectedMode,
+                onModeChange = { value ->
+                    selectedMode = value
+                    prefs.edit().putString("ai_mode", value).apply()
+                },
+                repository = repository,
+                screeningRoleHeld = screeningRoleHeld,
+                contactsPermissionGranted = contactsPermissionGranted,
+                onRequestScreeningRole = { requestScreeningRole() },
+                onRequestContactsPermission = {
+                    contactsLauncher?.launch(Manifest.permission.READ_CONTACTS)
+                }
+            )
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        refreshPermissionState()
+    }
+
+    private fun refreshPermissionState() {
+        screeningRoleHeld = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            getSystemService(RoleManager::class.java)?.isRoleHeld(RoleManager.ROLE_CALL_SCREENING) == true
+        } else false
+        contactsPermissionGranted =
+            checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun requestScreeningRole() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        val manager = getSystemService(RoleManager::class.java) ?: return
+        if (manager.isRoleAvailable(RoleManager.ROLE_CALL_SCREENING)) {
+            roleLauncher?.launch(manager.createRequestRoleIntent(RoleManager.ROLE_CALL_SCREENING))
         }
     }
 }
@@ -43,7 +95,11 @@ private fun JusuHome(
     onEnabledChange: (Boolean) -> Unit,
     mode: String,
     onModeChange: (String) -> Unit,
-    repository: InstructionRepository
+    repository: InstructionRepository,
+    screeningRoleHeld: Boolean,
+    contactsPermissionGranted: Boolean,
+    onRequestScreeningRole: () -> Unit,
+    onRequestContactsPermission: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
     var instructions by remember { mutableStateOf(emptyList<CallInstruction>()) }
@@ -72,6 +128,25 @@ private fun JusuHome(
                             Text(if (enabled) "Enabled in app settings" else "Off")
                         }
                         Switch(checked = enabled, onCheckedChange = onEnabledChange)
+                    }
+                }
+
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Call screening permissions", style = MaterialTheme.typography.titleLarge)
+                        Text(if (screeningRoleHeld) "Call screening role granted" else "Android call-screening role is not granted.")
+                        if (!screeningRoleHeld) {
+                            Button(onClick = onRequestScreeningRole, modifier = Modifier.fillMaxWidth()) {
+                                Text("Grant call-screening role")
+                            }
+                        }
+                        Text(if (contactsPermissionGranted) "Contacts permission granted" else "Contacts permission not granted. Contact-specific rules are safely skipped until permission is granted.")
+                        if (!contactsPermissionGranted) {
+                            OutlinedButton(onClick = onRequestContactsPermission, modifier = Modifier.fillMaxWidth()) {
+                                Text("Allow contacts access")
+                            }
+                        }
+                        Text("Android displays its own permission/role confirmation. You can decline either request; call screening then remains unavailable or contact matching is limited.", style = MaterialTheme.typography.bodySmall)
                     }
                 }
 
@@ -123,7 +198,8 @@ private fun JusuHome(
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("Device capability status", style = MaterialTheme.typography.titleMedium)
-                        Text("The offline rule engine is implemented. Android call screening, answering, and phone-call audio are not connected yet.")
+                        Text(if (screeningRoleHeld) "Android has granted the screening role. Incoming-call integration is registered but still requires real-device validation." else "The offline rule engine is implemented. Grant the Android screening role to let the system bind the call-screening service.")
+                        Text("This service does not answer calls, access call audio, or record conversations. SCREEN currently silences ringing; it is not a live AI conversation.", style = MaterialTheme.typography.bodySmall)
                     }
                 }
                 Text("Privacy first · Instructions and settings stay on this device", style = MaterialTheme.typography.bodySmall)
