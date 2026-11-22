@@ -132,6 +132,9 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun JusuHome(
+    onOpenChat: () -> Unit,
+    showChat: Boolean,
+    onCloseChat: () -> Unit,
     enabled: Boolean,
     onEnabledChange: (Boolean) -> Unit,
     mode: String,
