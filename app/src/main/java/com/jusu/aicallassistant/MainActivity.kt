@@ -90,6 +90,15 @@ class MainActivity : ComponentActivity() {
         } else false
         contactsPermissionGranted =
             checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+        val listenerComponent = ComponentName(this, WhatsAppCallNotificationListener::class.java).flattenToString()
+        val enabledListeners = Settings.Secure.getString(contentResolver, "enabled_notification_listeners").orEmpty()
+        whatsappNotificationAccessGranted = enabledListeners.split(":").any {
+            it.equals(listenerComponent, ignoreCase = true)
+        }
+        val whatsappPrefs = getSharedPreferences(WhatsAppCallNotificationListener.PREFERENCES, MODE_PRIVATE)
+        lastWhatsAppCallLabel = whatsappPrefs.getString(WhatsAppCallNotificationListener.KEY_LAST_LABEL, "").orEmpty()
+        lastWhatsAppCallApp = whatsappPrefs.getString(WhatsAppCallNotificationListener.KEY_LAST_APP, "").orEmpty()
+        lastWhatsAppCallTime = whatsappPrefs.getLong(WhatsAppCallNotificationListener.KEY_LAST_TIME, 0L)
     }
 
     private fun requestScreeningRole() {
@@ -110,8 +119,13 @@ private fun JusuHome(
     repository: InstructionRepository,
     screeningRoleHeld: Boolean,
     contactsPermissionGranted: Boolean,
+    whatsappNotificationAccessGranted: Boolean,
+    lastWhatsAppCallLabel: String,
+    lastWhatsAppCallApp: String,
+    lastWhatsAppCallTime: Long,
     onRequestScreeningRole: () -> Unit,
-    onRequestContactsPermission: () -> Unit
+    onRequestContactsPermission: () -> Unit,
+    onRequestWhatsAppAccess: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
     var instructions by remember { mutableStateOf(emptyList<CallInstruction>()) }
