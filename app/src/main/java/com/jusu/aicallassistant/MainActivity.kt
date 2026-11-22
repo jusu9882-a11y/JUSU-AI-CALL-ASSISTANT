@@ -17,10 +17,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.ui.window.Dialog
 import com.jusu.aicallassistant.intelligence.JusuChatScreen
+import com.jusu.aicallassistant.intelligence.DeviceCapabilityInspector
+import com.jusu.aicallassistant.intelligence.DeviceProfile
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import com.jusu.aicallassistant.data.InstructionRepository
 import com.jusu.aicallassistant.calls.WhatsAppCallNotificationListener
 import com.jusu.aicallassistant.engine.CallAction
@@ -158,6 +161,8 @@ private fun JusuHome(
     var activeProfile by remember { mutableStateOf(repository.activeProfile()) }
     var editing by remember { mutableStateOf<CallInstruction?>(null) }
     var showEditor by remember { mutableStateOf(false) }
+    var deviceProfile by remember { mutableStateOf<DeviceProfile?>(null) }
+    val context = LocalContext.current
 
     LaunchedEffect(repository) {
         repository.instructions.collect { instructions = it }
@@ -275,8 +280,31 @@ private fun JusuHome(
                 }
 
                 Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("On-device diagnostics", style = MaterialTheme.typography.titleLarge)
+                        Text("Measure this phone's current resources before selecting an offline AI model.")
+                        Button(
+                            onClick = { deviceProfile = DeviceCapabilityInspector.inspect(context) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text(if (deviceProfile == null) "Run device check" else "Refresh device check") }
+                        deviceProfile?.let { profile ->
+                            HorizontalDivider()
+                            Text("Total RAM: ${profile.totalMemoryMb} MB")
+                            Text("Available RAM now: ${profile.availableMemoryMb} MB")
+                            Text("Free app storage: ${profile.freeStorageMb} MB")
+                            Text("Android API level: ${profile.sdkInt}")
+                            Text("Processor ABIs: ${profile.supportedAbis.joinToString()}")
+                            Text("System reports low memory: ${if (profile.lowMemory) "Yes" else "No"}")
+                            Text("Thermal status: ${profile.thermalStatus?.let { thermalLabel(it) } ?: "Not available"}")
+                            Text("These values are a live snapshot and can change as other apps run.", style = MaterialTheme.typography.bodySmall)
+                        } ?: Text("No diagnostic snapshot yet. Run the check when you are ready.", style = MaterialTheme.typography.bodySmall)
+                        Text("No model is loaded by this check. JUSU will evaluate a model's RAM and storage requirements separately before loading it.", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+
+                Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Device capability status", style = MaterialTheme.typography.titleMedium)
+                        Text("Call service status", style = MaterialTheme.typography.titleMedium)
                         Text(if (screeningRoleHeld) "Android has granted the screening role. Incoming-call integration is registered but still requires real-device validation." else "The offline rule engine is implemented. Grant the Android screening role to let the system bind the call-screening service.")
                         Text("This service does not answer calls, access call audio, or record conversations. SCREEN currently silences ringing; it is not a live AI conversation.", style = MaterialTheme.typography.bodySmall)
                     }
@@ -387,4 +415,16 @@ private fun InstructionEditor(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
+}
+
+
+private fun thermalLabel(status: Int): String = when (status) {
+    0 -> "None"
+    1 -> "Light"
+    2 -> "Moderate"
+    3 -> "Severe"
+    4 -> "Critical"
+    5 -> "Emergency"
+    6 -> "Shutdown"
+    else -> "Unknown ($status)"
 }
