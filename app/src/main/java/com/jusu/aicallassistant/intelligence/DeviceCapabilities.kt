@@ -64,7 +64,14 @@ object ModelReadinessEvaluator {
         val minimumFreeMemoryMb = maxOf(512L, minimumRecommendedRamMb / 4L)
         val availableMemoryTooLow = device.lowMemory ||
             device.availableMemoryMb < minimumFreeMemoryMb
-        val requiredStorageMb = (modelBytes + modelBytes / 5L) / MB
+        val overheadBytes = modelBytes / 5L
+        val requiredBytes = if (modelBytes > Long.MAX_VALUE - overheadBytes) {
+            Long.MAX_VALUE
+        } else {
+            modelBytes + overheadBytes
+        }
+        val requiredStorageMb = requiredBytes / MB +
+            if (requiredBytes % MB == 0L) 0L else 1L
         val storageTooLow = device.freeStorageMb < requiredStorageMb
 
         if ((totalMemoryTooLow || availableMemoryTooLow) && storageTooLow) {
