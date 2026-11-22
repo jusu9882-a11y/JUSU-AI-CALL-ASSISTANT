@@ -10,6 +10,7 @@ class ExpertBrain {
         if (input.isBlank()) return BrainReply("Please type a message so I can help.")
         val lower = input.lowercase().replace(Regex("[^\\p{L}\\p{N}\\s]"), " ")
             .replace(Regex("\\s+"), " ").trim()
+            .replace("what s ", "whats ").replace("let s ", "lets ")
         val lastAssistant = history.lastOrNull { it.role == "assistant" }?.text.orEmpty()
         val lastUser = history.lastOrNull { it.role == "user" }?.text.orEmpty()
         val topic = inferTopic(lastUser, lastAssistant)
