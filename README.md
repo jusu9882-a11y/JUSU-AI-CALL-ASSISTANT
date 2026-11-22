@@ -28,6 +28,10 @@ JUSU cannot force WhatsApp to expose such an action, silently answer or reject a
 
 Declining any permission leaves the related feature unavailable; permissions are not bypassed.
 
+## Synthetic conversation dataset
+
+A standard-library Python utility generates validated JSONL conversation examples for future model experiments. See [`tools/conversation_dataset/README.md`](tools/conversation_dataset/README.md). This is data generation only: it does not train a model, alter the Android chat engine, or download anything.
+
 ## Build
 
 Install Android Studio and Android SDK, then open this project. On a machine with Gradle and Android SDK configured:
