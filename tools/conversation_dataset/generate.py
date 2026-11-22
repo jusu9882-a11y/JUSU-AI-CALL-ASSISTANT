@@ -91,7 +91,7 @@ def render_flow(seed_idx: int, base_seed: int = 0) -> dict[str, Any]:
         "item_count": count,
         "item_size_mb": size_mb,
         "total_mb": total_mb,
-        "total_gb": round(total_mb / 1000, 3),
+        "total_gb": f"{total_mb / 1000:.3f}",
     }
     messages = [{"role": "system", "content": rng.choice(SYSTEM_ROLES)}]
     for turn in template["turns"]:
