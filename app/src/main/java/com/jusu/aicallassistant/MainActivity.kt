@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.ui.window.Dialog
+import com.jusu.aicallassistant.intelligence.JusuChatScreen
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,9 +58,11 @@ class MainActivity : ComponentActivity() {
         val prefs = getSharedPreferences("jusu_assistant_settings", MODE_PRIVATE)
         val repository = InstructionRepository(applicationContext)
         setContent {
+            var showChat by remember { mutableStateOf(false) }
             var enabled by remember { mutableStateOf(prefs.getBoolean("assistant_enabled", false)) }
             var selectedMode by remember { mutableStateOf(prefs.getString("ai_mode", "Lightweight Offline") ?: "Lightweight Offline") }
             JusuHome(
+                onOpenChat = { showChat = true },
                 enabled = enabled,
                 onEnabledChange = { value ->
                     enabled = value
@@ -70,6 +74,8 @@ class MainActivity : ComponentActivity() {
                     prefs.edit().putString("ai_mode", value).apply()
                 },
                 repository = repository,
+                showChat = showChat,
+                onCloseChat = { showChat = false },
                 screeningRoleHeld = screeningRoleHeld,
                 contactsPermissionGranted = contactsPermissionGranted,
                 whatsappNotificationAccessGranted = whatsappNotificationAccessGranted,
@@ -126,6 +132,9 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun JusuHome(
+    onOpenChat: () -> Unit,
+    showChat: Boolean,
+    onCloseChat: () -> Unit,
     enabled: Boolean,
     onEnabledChange: (Boolean) -> Unit,
     mode: String,
@@ -163,6 +172,7 @@ private fun JusuHome(
                 Text("JUSU", style = MaterialTheme.typography.headlineLarge, color = MaterialTheme.colorScheme.primary)
                 Text("AI CALL ASSISTANT", style = MaterialTheme.typography.titleMedium)
                 Text("Powered by JUSU", style = MaterialTheme.typography.labelMedium)
+                Button(onClick = onOpenChat, modifier = Modifier.fillMaxWidth()) { Text("Open JUSU Chat") }
 
                 Card(Modifier.fillMaxWidth()) {
                     Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
@@ -272,6 +282,14 @@ private fun JusuHome(
                     }
                 }
                 Text("Privacy first · Instructions and settings stay on this device", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+
+    if (showChat) {
+        Dialog(onDismissRequest = onCloseChat, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+            Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                JusuChatScreen(onClose = onCloseChat)
             }
         }
     }
