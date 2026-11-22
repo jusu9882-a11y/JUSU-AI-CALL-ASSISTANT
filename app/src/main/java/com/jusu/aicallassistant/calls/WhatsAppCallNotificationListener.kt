@@ -3,9 +3,7 @@ package com.jusu.aicallassistant.calls
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.graphics.drawable.Icon
-import android.os.Build
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 
@@ -58,6 +56,7 @@ class WhatsAppCallNotificationListener : NotificationListenerService() {
             .putLong(KEY_LAST_TIME, System.currentTimeMillis())
             .putString(KEY_LAST_APP, appLabel)
             .putBoolean(KEY_DECLINE_AVAILABLE, declineAction?.actionIntent != null)
+            .putString(KEY_ACTIVE_NOTIFICATION_KEY, sbn.key)
             .apply()
 
         // Only expose a decline shortcut when WhatsApp itself supplies one.
@@ -78,15 +77,23 @@ class WhatsAppCallNotificationListener : NotificationListenerService() {
             .addAction(shortcut)
             .build()
 
-        getSystemService(NotificationManager::class.java).notify(WHATSAPP_NOTIFICATION_ID, jusuNotification)
+        try {
+            getSystemService(NotificationManager::class.java).notify(WHATSAPP_NOTIFICATION_ID, jusuNotification)
+        } catch (_: SecurityException) {
+            // Notification access can be enabled while display permission is denied.
+        }
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
         if (sbn.packageName == WHATSAPP_PACKAGE || sbn.packageName == WHATSAPP_BUSINESS_PACKAGE) {
-            getSystemService(NotificationManager::class.java).cancel(WHATSAPP_NOTIFICATION_ID)
-            getSharedPreferences(PREFERENCES, MODE_PRIVATE).edit()
-                .putBoolean(KEY_DECLINE_AVAILABLE, false)
-                .apply()
+            val prefs = getSharedPreferences(PREFERENCES, MODE_PRIVATE)
+            if (prefs.getString(KEY_ACTIVE_NOTIFICATION_KEY, null) == sbn.key) {
+                getSystemService(NotificationManager::class.java).cancel(WHATSAPP_NOTIFICATION_ID)
+                prefs.edit()
+                    .putBoolean(KEY_DECLINE_AVAILABLE, false)
+                    .remove(KEY_ACTIVE_NOTIFICATION_KEY)
+                    .apply()
+            }
         }
     }
 
@@ -96,6 +103,7 @@ class WhatsAppCallNotificationListener : NotificationListenerService() {
         const val KEY_LAST_TIME = "last_call_time"
         const val KEY_LAST_APP = "last_call_app"
         const val KEY_DECLINE_AVAILABLE = "decline_action_available"
+        private const val KEY_ACTIVE_NOTIFICATION_KEY = "active_whatsapp_notification_key"
 
         private const val WHATSAPP_PACKAGE = "com.whatsapp"
         private const val WHATSAPP_BUSINESS_PACKAGE = "com.whatsapp.w4b"
