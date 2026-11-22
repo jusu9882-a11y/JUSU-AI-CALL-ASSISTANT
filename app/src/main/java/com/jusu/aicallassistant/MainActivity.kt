@@ -31,11 +31,14 @@ class MainActivity : ComponentActivity() {
     private var screeningRoleHeld by mutableStateOf(false)
     private var contactsPermissionGranted by mutableStateOf(false)
     private var whatsappNotificationAccessGranted by mutableStateOf(false)
+    private var notificationsPermissionGranted by mutableStateOf(Build.VERSION.SDK_INT < 33)
+    private var whatsappDeclineActionAvailable by mutableStateOf(false)
     private var lastWhatsAppCallLabel by mutableStateOf("")
     private var lastWhatsAppCallApp by mutableStateOf("")
     private var lastWhatsAppCallTime by mutableStateOf(0L)
     private var roleLauncher: androidx.activity.result.ActivityResultLauncher<Intent>? = null
     private var contactsLauncher: androidx.activity.result.ActivityResultLauncher<String>? = null
+    private var notificationsLauncher: androidx.activity.result.ActivityResultLauncher<String>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -43,6 +46,9 @@ class MainActivity : ComponentActivity() {
             refreshPermissionState()
         }
         contactsLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+            refreshPermissionState()
+        }
+        notificationsLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
             refreshPermissionState()
         }
         refreshPermissionState()
@@ -67,10 +73,15 @@ class MainActivity : ComponentActivity() {
                 screeningRoleHeld = screeningRoleHeld,
                 contactsPermissionGranted = contactsPermissionGranted,
                 whatsappNotificationAccessGranted = whatsappNotificationAccessGranted,
+                notificationsPermissionGranted = notificationsPermissionGranted,
+                whatsappDeclineActionAvailable = whatsappDeclineActionAvailable,
                 lastWhatsAppCallLabel = lastWhatsAppCallLabel,
                 lastWhatsAppCallApp = lastWhatsAppCallApp,
                 lastWhatsAppCallTime = lastWhatsAppCallTime,
                 onRequestWhatsAppAccess = { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) },
+                onRequestNotificationsPermission = {
+                    if (Build.VERSION.SDK_INT >= 33) notificationsLauncher?.launch(Manifest.permission.POST_NOTIFICATIONS)
+                },
                 onRequestScreeningRole = { requestScreeningRole() },
                 onRequestContactsPermission = {
                     contactsLauncher?.launch(Manifest.permission.READ_CONTACTS)
@@ -95,10 +106,13 @@ class MainActivity : ComponentActivity() {
         whatsappNotificationAccessGranted = enabledListeners.split(":").any {
             it.equals(listenerComponent, ignoreCase = true)
         }
+        notificationsPermissionGranted = Build.VERSION.SDK_INT < 33 ||
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
         val whatsappPrefs = getSharedPreferences(WhatsAppCallNotificationListener.PREFERENCES, MODE_PRIVATE)
         lastWhatsAppCallLabel = whatsappPrefs.getString(WhatsAppCallNotificationListener.KEY_LAST_LABEL, "").orEmpty()
         lastWhatsAppCallApp = whatsappPrefs.getString(WhatsAppCallNotificationListener.KEY_LAST_APP, "").orEmpty()
         lastWhatsAppCallTime = whatsappPrefs.getLong(WhatsAppCallNotificationListener.KEY_LAST_TIME, 0L)
+        whatsappDeclineActionAvailable = whatsappPrefs.getBoolean(WhatsAppCallNotificationListener.KEY_DECLINE_AVAILABLE, false)
     }
 
     private fun requestScreeningRole() {
@@ -120,12 +134,15 @@ private fun JusuHome(
     screeningRoleHeld: Boolean,
     contactsPermissionGranted: Boolean,
     whatsappNotificationAccessGranted: Boolean,
+    notificationsPermissionGranted: Boolean,
+    whatsappDeclineActionAvailable: Boolean,
     lastWhatsAppCallLabel: String,
     lastWhatsAppCallApp: String,
     lastWhatsAppCallTime: Long,
     onRequestScreeningRole: () -> Unit,
     onRequestContactsPermission: () -> Unit,
-    onRequestWhatsAppAccess: () -> Unit
+    onRequestWhatsAppAccess: () -> Unit,
+    onRequestNotificationsPermission: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
     var instructions by remember { mutableStateOf(emptyList<CallInstruction>()) }
@@ -185,13 +202,20 @@ private fun JusuHome(
                                 Text("Enable WhatsApp call detection")
                             }
                         }
+                        Text(if (notificationsPermissionGranted) "JUSU notifications are allowed." else "Allow notifications so JUSU can show an optional decline shortcut when WhatsApp provides one.")
+                        if (!notificationsPermissionGranted) {
+                            OutlinedButton(onClick = onRequestNotificationsPermission, modifier = Modifier.fillMaxWidth()) {
+                                Text("Allow JUSU notifications")
+                            }
+                        }
                         if (lastWhatsAppCallTime > 0L) {
                             Text("Last detected: $lastWhatsAppCallApp · $lastWhatsAppCallLabel")
+                            Text(if (whatsappDeclineActionAvailable) "WhatsApp exposed a decline action for the last detected call." else "WhatsApp did not expose a supported decline action for the last detected call.", style = MaterialTheme.typography.bodySmall)
                             Text(java.text.DateFormat.getDateTimeInstance().format(java.util.Date(lastWhatsAppCallTime)), style = MaterialTheme.typography.bodySmall)
                         } else {
                             Text("No WhatsApp call notifications detected yet.", style = MaterialTheme.typography.bodySmall)
                         }
-                        Text("Android will ask you to grant notification access in Settings. JUSU filters for WhatsApp call notifications and stores only a short caller label and time locally. Detection does not yet answer, reject, silence, or access WhatsApp call audio.", style = MaterialTheme.typography.bodySmall)
+                        Text("JUSU can detect WhatsApp call notifications. If WhatsApp includes its own Decline or Reject notification action, JUSU can mirror it as a user-tapped shortcut. It cannot force a decline when WhatsApp does not expose that action, and it never accesses call audio.", style = MaterialTheme.typography.bodySmall)
                     }
                 }
 
