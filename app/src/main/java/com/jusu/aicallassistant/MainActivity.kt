@@ -3,6 +3,8 @@ package com.jusu.aicallassistant
 import android.Manifest
 import android.app.role.RoleManager
 import android.content.Intent
+import android.content.ComponentName
+import android.provider.Settings
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -18,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jusu.aicallassistant.data.InstructionRepository
+import com.jusu.aicallassistant.calls.WhatsAppCallNotificationListener
 import com.jusu.aicallassistant.engine.CallAction
 import com.jusu.aicallassistant.engine.CallInstruction
 import com.jusu.aicallassistant.engine.CallerScope
@@ -27,6 +30,10 @@ import java.util.UUID
 class MainActivity : ComponentActivity() {
     private var screeningRoleHeld by mutableStateOf(false)
     private var contactsPermissionGranted by mutableStateOf(false)
+    private var whatsappNotificationAccessGranted by mutableStateOf(false)
+    private var lastWhatsAppCallLabel by mutableStateOf("")
+    private var lastWhatsAppCallApp by mutableStateOf("")
+    private var lastWhatsAppCallTime by mutableStateOf(0L)
     private var roleLauncher: androidx.activity.result.ActivityResultLauncher<Intent>? = null
     private var contactsLauncher: androidx.activity.result.ActivityResultLauncher<String>? = null
 
@@ -59,6 +66,11 @@ class MainActivity : ComponentActivity() {
                 repository = repository,
                 screeningRoleHeld = screeningRoleHeld,
                 contactsPermissionGranted = contactsPermissionGranted,
+                whatsappNotificationAccessGranted = whatsappNotificationAccessGranted,
+                lastWhatsAppCallLabel = lastWhatsAppCallLabel,
+                lastWhatsAppCallApp = lastWhatsAppCallApp,
+                lastWhatsAppCallTime = lastWhatsAppCallTime,
+                onRequestWhatsAppAccess = { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) },
                 onRequestScreeningRole = { requestScreeningRole() },
                 onRequestContactsPermission = {
                     contactsLauncher?.launch(Manifest.permission.READ_CONTACTS)
@@ -147,6 +159,25 @@ private fun JusuHome(
                             }
                         }
                         Text("Android displays its own permission/role confirmation. You can decline either request; call screening then remains unavailable or contact matching is limited.", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("WhatsApp call support", style = MaterialTheme.typography.titleLarge)
+                        Text(if (whatsappNotificationAccessGranted) "WhatsApp call notification access is enabled." else "Enable notification access to let JUSU detect incoming WhatsApp and WhatsApp Business call notifications.")
+                        if (!whatsappNotificationAccessGranted) {
+                            OutlinedButton(onClick = onRequestWhatsAppAccess, modifier = Modifier.fillMaxWidth()) {
+                                Text("Enable WhatsApp call detection")
+                            }
+                        }
+                        if (lastWhatsAppCallTime > 0L) {
+                            Text("Last detected: $lastWhatsAppCallApp · $lastWhatsAppCallLabel")
+                            Text(java.text.DateFormat.getDateTimeInstance().format(java.util.Date(lastWhatsAppCallTime)), style = MaterialTheme.typography.bodySmall)
+                        } else {
+                            Text("No WhatsApp call notifications detected yet.", style = MaterialTheme.typography.bodySmall)
+                        }
+                        Text("Android will ask you to grant notification access in Settings. JUSU filters for WhatsApp call notifications and stores only a short caller label and time locally. Detection does not yet answer, reject, silence, or access WhatsApp call audio.", style = MaterialTheme.typography.bodySmall)
                     }
                 }
 
